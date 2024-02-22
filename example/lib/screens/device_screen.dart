@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -146,11 +148,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   
   List<Widget> _buildServiceTiles(BuildContext context, BluetoothDevice d) {
-    return _services
-        .map(
-          (s) => ServiceTile(
-            service: s,
-            characteristicTiles: s.characteristics.map((c) => _buildCharacteristicTile(c)).toList(),
+    return _services.map((s) => ServiceTile(service: s, characteristicTiles: s.characteristics.map((c) => _buildCharacteristicTile(c)).toList(),
           ),
         )
         .toList();
@@ -257,7 +255,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                 trailing: buildGetServices(context),
               ),
               buildMtuTile(context),
-              ..._buildServiceTiles(context, widget.device),
+              // ..._buildServiceTiles(context, widget.device),
               TextButton(
                 onPressed: () async {
                   
@@ -267,14 +265,101 @@ class _DeviceScreenState extends State<DeviceScreen> {
                       for (BluetoothCharacteristic characteristic in characteristics) {
                         if (characteristic.uuid.toString() == 'ffe1') {
                           await characteristic.write(
-                          [
-                            170, 85, 144, 235, 151, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17
-                          ], withoutResponse: false);
+                          [170, 85, 144, 235, 151, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17],
+                          withoutResponse: false);
+
+                          // characteristic.lastValueStream.listen((value) {
+                          //   value.contains(190) ? print('value190: $value') : null;
+                          //   List<int> hexFormat = value.map((v) => int.parse('0x${v.toRadixString(16).padLeft(2, '0').toUpperCase()}')).toList();
+                          //   String deviceName = utf8.decode(hexFormat.sublist(46, 46 + 16));
+                          //   print('Device name: $deviceName');
+                          //   String devicePasscode = utf8.decode(hexFormat.sublist(62, 62 + 16));
+                          //   print('Device passcode: $devicePasscode');
+                          // });
+
+                          /*
                           await characteristic.setNotifyValue(true).then((_) {
                             characteristic.lastValueStream.listen((value) async {
-                              Uint32List input = Uint32List.fromList(value);
-                              // Обработка полученного ответа
-                              print('Полученный ответ: $input');
+                              value.contains(190) ? print('value190: $value') : null;
+                              List<int> hexFormat = value.map((v) => int.parse('0x${v.toRadixString(16).padLeft(2, '0').toUpperCase()}')).toList();
+                              String deviceName = utf8.decode(hexFormat.sublist(46, 46 + 16));
+                              print('Device name: $deviceName');
+                              String devicePasscode = utf8.decode(hexFormat.sublist(62, 62 + 16));
+                              print('Device passcode: $devicePasscode');
+                              /*
+                              Uint16List input = Uint16List.fromList(hexFormat);
+                              ByteData bd = input.buffer.asByteData();
+                              try {
+                                // Смещение 130
+                                int offset = 130;
+                                // Чтение 16-битного значения int16 с позиции 130
+                                int result = bd.getInt16(offset + 46, Endian.little);
+                                print('temp DEVICE_INFO: ${result}');
+                              } catch (e) {
+                                null;
+                              }
+                              */
+                            });
+                          });
+                          */
+                        }
+                      }
+                    }
+                  }
+                  
+                }, 
+                child: Text('COMMAND_DEVICE_INFO')
+              ),
+              TextButton(
+                onPressed: () async {
+                  
+                  for (BluetoothService service in _services) {
+                    if (service.uuid.toString() == 'ffe0') {
+                      var characteristics = service.characteristics;
+                      for (BluetoothCharacteristic characteristic in characteristics) {
+                        if (characteristic.uuid.toString() == 'ffe1') {
+                          await characteristic.write(
+                          [170, 85, 144, 235, 150, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16],
+                          withoutResponse: false);
+                          await characteristic.setNotifyValue(true).then((_) {
+                            characteristic.lastValueStream.listen((value) async {
+                              // List<int> hexFormat = value.map((v) => int.parse('0x${v.toRadixString(16).padLeft(2, '0').toUpperCase()}')).toList();
+                              
+                              Uint16List input = Uint16List.fromList(value);
+                              ByteData bd = input.buffer.asByteData();
+                              try {
+
+                                /*
+                                КОД ИЗ ble.cpp
+
+                                uint8_t offset = 0;
+                                if (this->protocol_version_ == PROTOCOL_VERSION_JK02_32S) {
+                                  frame_version = FRAME_VERSION_JK02_32S;
+                                  offset = 16;
+                                }
+
+                                offset = offset * 2;
+
+                                // 130   2   0xBE 0x00              Temperature Sensor 1  0.1          °C
+                                this->publish_state_(this->temperatures_[0].temperature_sensor_,
+                                                    (float) ((int16_t) jk_get_16bit(130 + offset)) * 0.1f);
+
+                                То есть, для получения температуры, мы должны стартовать со 130 байта + некий offset, который по
+                                определению может быть либо 0 либо 32
+                                */
+
+                                int startByte = 130;
+                                int offset = 0;
+                                
+                                int result = bd.getInt16(startByte + offset, Endian.little);
+                                String roundedString = (result * 0.1).toStringAsFixed(2);
+                                double roundedTemp = double.parse(roundedString);
+                                print('temp: ${roundedTemp} °C');
+
+                              } catch (e) {
+                                null;
+                              } 
+
 
                             });
                           });
@@ -286,8 +371,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
                   }
                   
                 }, 
-                child: Text('temperature')
-              )
+                child: Text('COMMAND_CELL_INFO')
+              ),
             ],
           ),
         ),
